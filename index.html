@@ -328,10 +328,21 @@
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global variables provided by the Canvas environment
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
-        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        // ==============================================================================
+        // COLOQUE AS SUAS PRÓPRIAS CREDENCIAIS DO FIREBASE AQUI
+        // Você obterá este objeto no Firebase Console após criar seu projeto.
+        // SUBSTITUA OS VALORES ENTRE ASPAS PELOS SEUS REAIS.
+        // ==============================================================================
+        const firebaseConfig = {
+            apiKey: "AIzaSyC-b8gj088piEgALR-gIR8HE9PBz_QF39A",             // Ex: "AIzaSyC0-YOUR-API-KEY"
+            authDomain: "planilha-tesouro-pet.firebaseapp.com",     // Ex: "your-project-id.firebaseapp.com"
+            projectId: "planilha-tesouro-pet",       // Ex: "your-project-id"
+            storageBucket: "planilha-tesouro-pet.firebasestorage.app", // Ex: "your-project-id.appspot.com"
+            messagingSenderId: "1057608855985", // Ex: "1234567890"
+            appId: "1057608855985:web:72ef1c2974a7766c37cd90"                // Ex: "1:1234567890:web:abcdef1234567890abcdef"
+        };
+        // ==============================================================================
+
 
         let app;
         let db;
@@ -365,9 +376,11 @@
          * Initializes Firebase app, authentication, and sets up the auth state listener.
          */
         async function initializeFirebaseAndAuth() {
-            if (!firebaseConfig) {
-                console.error("Firebase config is missing. Cannot initialize Firebase.");
-                showMessageBox('Erro: Configuração do Firebase ausente.', 'error');
+            // Verifica se a configuração do Firebase foi inserida
+            if (!firebaseConfig.apiKey || firebaseConfig.apiKey === "SEU_API_KEY_AQUI") {
+                console.error("Firebase config is missing or incomplete. Please update firebaseConfig with your actual project details.");
+                showMessageBox('Erro: Configuração do Firebase ausente ou incompleta. Atualize o código com suas credenciais.', 'error');
+                loadingOverlay.classList.add('hidden'); // Hide loading
                 return;
             }
 
@@ -385,14 +398,11 @@
                         setupRealtimeListener(); // Start listening for data after successful authentication
                     } else {
                         userId = null;
-                        userIdDisplay.textContent = 'Não autenticado.';
+                        userIdDisplay.textContent = 'Não autenticado. Tentando login anônimo...';
                         console.log("Nenhum usuário logado. Tentando login anônimo...");
                         try {
-                            if (initialAuthToken) {
-                                await signInWithCustomToken(auth, initialAuthToken);
-                            } else {
-                                await signInAnonymously(auth);
-                            }
+                            // Tenta fazer login anonimamente, não há initialAuthToken fora do Canvas
+                            await signInAnonymously(auth);
                         } catch (anonError) {
                             console.error("Erro ao tentar login anônimo:", anonError);
                             showMessageBox(`Erro de login: ${anonError.message}. Recarregue a página.`, 'error');
@@ -401,12 +411,14 @@
                             currentBalance = 0;
                             updateBalanceDisplay();
                             renderTransactions();
+                            loadingOverlay.classList.add('hidden'); // Hide loading
                         }
                     }
                 });
             } catch (error) {
                 console.error("Erro na inicialização do Firebase:", error);
                 showMessageBox(`Erro ao inicializar Firebase: ${error.message}`, 'error');
+                loadingOverlay.classList.add('hidden'); // Hide loading
             }
         }
 
@@ -417,6 +429,7 @@
         function setupRealtimeListener() {
             if (!userId || !db) {
                 console.log("userId ou db não disponível para configurar o listener.");
+                loadingOverlay.classList.add('hidden'); // Hide loading
                 return;
             }
 
@@ -425,8 +438,9 @@
                 unsubscribeSnapshot();
             }
 
-            const transactionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
-            const q = query(transactionsCollectionRef); // No orderBy to avoid index issues. Client-side sort is fine for small lists.
+            // Usar a coleção do usuário anônimo
+            const transactionsCollectionRef = collection(db, `users/${userId}/transactions`);
+            const q = query(transactionsCollectionRef);
 
             loadingOverlay.classList.remove('hidden'); // Show loading indicator
 
@@ -441,7 +455,8 @@
                         date: data.date,
                         value: parseFloat(data.value), // Ensure value is a number
                         description: data.description,
-                        type: data.type
+                        type: data.type,
+                        timestamp: data.timestamp // Keep the timestamp for sorting
                     };
                     fetchedTransactions.push(transaction);
 
@@ -452,13 +467,10 @@
                     }
                 });
                 
-                // Sort transactions by date (descending) and then type (income before expense for same date)
+                // Sort transactions by timestamp (descending) for consistent order
                 transactions = fetchedTransactions.sort((a, b) => {
-                    if (a.date > b.date) return -1;
-                    if (a.date < b.date) return 1;
-                    // If dates are the same, put income before expense
-                    if (a.type === 'income' && b.type === 'expense') return -1;
-                    if (a.type === 'expense' && b.type === 'income') return 1;
+                    if (a.timestamp > b.timestamp) return -1;
+                    if (a.timestamp < b.timestamp) return 1;
                     return 0;
                 });
 
@@ -524,9 +536,9 @@
 
             // Add event listeners for delete buttons
             document.querySelectorAll('.delete-btn').forEach(button => {
-                button.addEventListener('click', (event) => {
+                button.addEventListener('click', async (event) => {
                     const transactionIdToDelete = event.currentTarget.dataset.id;
-                    deleteTransactionFromFirestore(transactionIdToDelete);
+                    await deleteTransactionFromFirestore(transactionIdToDelete);
                 });
             });
         }
@@ -541,7 +553,7 @@
                 return;
             }
             try {
-                await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/transactions`, transactionId));
+                await deleteDoc(doc(db, `users/${userId}/transactions`, transactionId));
                 showMessageBox('Transação removida com sucesso!', 'success');
             } catch (error) {
                 console.error("Erro ao remover transação:", error);
@@ -579,7 +591,7 @@
 
             try {
                 // Add the transaction to Firestore
-                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/transactions`), newTransaction);
+                await addDoc(collection(db, `users/${userId}/transactions`), newTransaction);
                 showMessageBox('Transação adicionada com sucesso!', 'success');
 
                 // Clear form fields after successful addition
@@ -615,7 +627,7 @@
             };
 
             try {
-                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/transactions`), newTransaction);
+                await addDoc(collection(db, `users/${userId}/transactions`), newTransaction);
                 showMessageBox('Despesa de água (R$8,00) registrada com sucesso!', 'success');
             } catch (error) {
                 console.error("Erro ao registrar despesa de água:", error);

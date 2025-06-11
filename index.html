@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tesouro do Pet Elétrica</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light blue-gray background */
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background-color: #ffffff;
+            border-radius: 16px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            max-width: 900px;
+            width: 100%;
+            padding: 30px;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+        .form-section, .summary-section, .transactions-section {
+            padding: 20px;
+            border-radius: 12px;
+            background-color: #f7fafc; /* Lighter background for sections */
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.05);
+        }
+        .input-group label {
+            font-weight: 600;
+            color: #4a5568;
+            margin-bottom: 8px;
+            display: block;
+        }
+        .input-group input[type="date"],
+        .input-group input[type="number"],
+        .input-group textarea {
+            width: 100%;
+            padding: 10px 15px;
+            border: 1px solid #cbd5e0;
+            border-radius: 8px;
+            font-size: 1rem;
+            color: #2d3748;
+            transition: border-color 0.2s ease-in-out;
+            box-sizing: border-box;
+        }
+        .input-group input:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #63b3ed;
+            box-shadow: 0 0 0 2px rgba(99, 179, 237, 0.5);
+        }
+        .radio-group label {
+            cursor: pointer;
+            padding: 10px 15px;
+            border-radius: 8px;
+            border: 1px solid #cbd5e0;
+            transition: background-color 0.2s ease-in-out, border-color 0.2s ease-in-out;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+        .radio-group input[type="radio"]:checked + label {
+            background-color: #63b3ed;
+            border-color: #63b3ed;
+            color: white;
+        }
+        .radio-group input[type="radio"] {
+            display: none;
+        }
+        button {
+            padding: 12px 25px;
+            border-radius: 10px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s ease-in-out, transform 0.1s ease-out, box-shadow 0.2s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 10px rgba(0, 0, 0, 0.15);
+        }
+        button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        .btn-primary {
+            background-color: #4299e1; /* Blue */
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #3182ce;
+        }
+        .btn-secondary {
+            background-color: #ed8936; /* Orange */
+            color: white;
+        }
+        .btn-secondary:hover {
+            background-color: #dd6b20;
+        }
+
+        #currentBalance {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: #2f855a; /* Green for positive balance */
+            text-align: center;
+        }
+        #currentBalance.negative {
+            color: #e53e3e; /* Red for negative balance */
+        }
+        .transactions-list {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            max-height: 400px; /* Limit height for scrollability */
+            overflow-y: auto;
+            padding-right: 5px; /* Space for scrollbar */
+        }
+        .transaction-item {
+            display: grid;
+            grid-template-columns: 80px 1fr 120px 30px; /* Date, Description, Value, Delete */
+            align-items: center;
+            gap: 15px;
+            padding: 12px 15px;
+            border-radius: 10px;
+            background-color: #ffffff;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+            font-size: 0.95rem;
+            color: #2d3748;
+        }
+        .transaction-item .description {
+            font-weight: 500;
+            color: #2c5282; /* Darker blue for description */
+        }
+        .transaction-item .date {
+            color: #718096; /* Gray for date */
+            font-size: 0.85rem;
+        }
+        .transaction-item .value {
+            font-weight: 600;
+            text-align: right;
+        }
+        .transaction-item.income .value {
+            color: #38a169; /* Green for income */
+        }
+        .transaction-item.expense .value {
+            color: #e53e3e; /* Red for expense */
+        }
+        .delete-btn {
+            background: none;
+            border: none;
+            color: #e53e3e;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 5px;
+            border-radius: 50%;
+            transition: background-color 0.2s ease-in-out;
+            box-shadow: none; /* Override general button shadow */
+        }
+        .delete-btn:hover {
+            background-color: rgba(229, 62, 62, 0.1);
+            transform: none; /* Override general button transform */
+            box-shadow: none;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .transaction-item {
+                grid-template-columns: 60px 1fr 100px 30px; /* Adjust columns for smaller screens */
+                gap: 10px;
+                font-size: 0.9rem;
+            }
+            .transaction-item .date {
+                font-size: 0.75rem;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .container {
+                padding: 20px;
+                border-radius: 12px;
+            }
+            .form-section, .summary-section, .transactions-section {
+                padding: 15px;
+            }
+            .input-group input, .input-group textarea {
+                padding: 8px 12px;
+            }
+            button {
+                padding: 10px 20px;
+                font-size: 0.9rem;
+            }
+            .radio-group {
+                flex-direction: column;
+            }
+            .radio-group label {
+                width: 100%;
+                justify-content: center;
+            }
+            #currentBalance {
+                font-size: 2rem;
+            }
+            .transaction-item {
+                grid-template-columns: 1fr; /* Stack elements on very small screens */
+                gap: 5px;
+                padding: 10px;
+            }
+            .transaction-item .value {
+                text-align: left;
+            }
+        }
+    </style>
+</head>
+<body class="antialiased">
+    <div class="container">
+        <h1 class="text-4xl font-extrabold text-center text-blue-800 mb-6">Tesouro do Pet Elétrica</h1>
+
+        <div class="summary-section">
+            <h2 class="text-xl font-bold text-gray-700 mb-4">Montante Atual:</h2>
+            <p id="currentBalance" class="text-center">R$ 0,00</p>
+        </div>
+
+        <div class="form-section">
+            <h2 class="text-xl font-bold text-gray-700 mb-4">Adicionar Transação</h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div class="input-group">
+                    <label for="transactionDate">Data:</label>
+                    <input type="date" id="transactionDate" class="shadow-sm">
+                </div>
+                <div class="input-group">
+                    <label for="transactionValue">Valor:</label>
+                    <input type="number" id="transactionValue" step="0.01" class="shadow-sm" placeholder="Ex: 50.00">
+                </div>
+            </div>
+
+            <div class="input-group mb-4">
+                <label for="transactionDescription">Descrição:</label>
+                <textarea id="transactionDescription" rows="2" class="shadow-sm" placeholder="Onde o dinheiro foi gasto/recebido?"></textarea>
+            </div>
+
+            <div class="radio-group flex gap-4 mb-6">
+                <input type="radio" id="typeIncome" name="transactionType" value="income" checked>
+                <label for="typeIncome" class="flex-1 text-center bg-green-100 border-green-300 text-green-800 hover:bg-green-200">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 100-2 1 1 0 000 2zm-3 8a1 1 0 100-2 1 1 0 000 2zm6-4a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
+                    Entrada
+                </label>
+                <input type="radio" id="typeExpense" name="transactionType" value="expense">
+                <label for="typeExpense" class="flex-1 text-center bg-red-100 border-red-300 text-red-800 hover:bg-red-200">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 100-2 1 1 0 000 2zm-3 8a1 1 0 100-2 1 1 0 000 2zm6-4a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
+                    Saída
+                </label>
+            </div>
+
+            <div class="flex flex-col sm:flex-row gap-4">
+                <button id="addTransactionBtn" class="btn-primary flex-1">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clip-rule="evenodd"></path></svg>
+                    Adicionar Transação
+                </button>
+                <button id="addWaterBtn" class="btn-secondary flex-1">
+                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20"><path d="M17.5 10.5c0 4.694-4.5 8.5-10 8.5S-2.5 15.194-2.5 10.5 2 2 7.5 2s10 3.806 10 8.5zM7.5 4c-3.033 0-5.5 2.239-5.5 5s2.467 5 5.5 5 5.5-2.239 5.5-5S10.533 4 7.5 4zM7.5 13c-2.481 0-4.5-1.791-4.5-4s2.019-4 4.5-4 4.5 1.791 4.5 4S9.981 13 7.5 13zM7.5 5c-1.933 0-3.5 1.343-3.5 3s1.567 3 3.5 3 3.5-1.343 3.5-3S9.433 5 7.5 5z"></path></svg>
+                    Registrar Água (R$8,00 Saída)
+                </button>
+            </div>
+        </div>
+
+        <div class="transactions-section">
+            <h2 class="text-xl font-bold text-gray-700 mb-4">Histórico de Transações</h2>
+            <div id="transactionsList" class="transactions-list">
+                <!-- Transactions will be rendered here -->
+                <p class="text-gray-500 text-center py-4">Nenhuma transação registrada ainda.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let transactions = [];
+        let currentBalance = 0;
+
+        const transactionDateInput = document.getElementById('transactionDate');
+        const transactionValueInput = document.getElementById('transactionValue');
+        const transactionDescriptionInput = document.getElementById('transactionDescription');
+        const typeIncomeRadio = document.getElementById('typeIncome');
+        const typeExpenseRadio = document.getElementById('typeExpense');
+        const addTransactionBtn = document.getElementById('addTransactionBtn');
+        const addWaterBtn = document.getElementById('addWaterBtn');
+        const currentBalanceDisplay = document.getElementById('currentBalance');
+        const transactionsListDiv = document.getElementById('transactionsList');
+
+        // Set today's date as default
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        transactionDateInput.value = `${year}-${month}-${day}`;
+
+        /**
+         * Saves the current transactions array to localStorage.
+         */
+        function saveTransactions() {
+            localStorage.setItem('petEletricaTreasury', JSON.stringify(transactions));
+        }
+
+        /**
+         * Loads transactions from localStorage and calculates current balance.
+         */
+        function loadTransactions() {
+            const storedTransactions = localStorage.getItem('petEletricaTreasury');
+            if (storedTransactions) {
+                transactions = JSON.parse(storedTransactions);
+                currentBalance = 0; // Reset balance before recalculating
+                transactions.forEach(transaction => {
+                    if (transaction.type === 'income') {
+                        currentBalance += transaction.value;
+                    } else {
+                        currentBalance -= transaction.value;
+                    }
+                });
+            }
+            updateBalanceDisplay();
+            renderTransactions();
+        }
+
+        /**
+         * Formats a number as a Brazilian real currency string.
+         * @param {number} value The number to format.
+         * @returns {string} The formatted currency string.
+         */
+        function formatCurrency(value) {
+            return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+        }
+
+        /**
+         * Updates the displayed current balance and applies appropriate styling.
+         */
+        function updateBalanceDisplay() {
+            currentBalanceDisplay.textContent = formatCurrency(currentBalance);
+            if (currentBalance < 0) {
+                currentBalanceDisplay.classList.add('negative');
+            } else {
+                currentBalanceDisplay.classList.remove('negative');
+            }
+        }
+
+        /**
+         * Renders all transactions in the transactions list.
+         */
+        function renderTransactions() {
+            transactionsListDiv.innerHTML = ''; // Clear existing list
+
+            if (transactions.length === 0) {
+                transactionsListDiv.innerHTML = '<p class="text-gray-500 text-center py-4">Nenhuma transação registrada ainda.</p>';
+                return;
+            }
+
+            // Render in reverse order to show most recent at the top
+            for (let i = transactions.length - 1; i >= 0; i--) {
+                const transaction = transactions[i];
+                const transactionItem = document.createElement('div');
+                transactionItem.classList.add('transaction-item', transaction.type === 'income' ? 'income' : 'expense');
+                
+                // Format date for display
+                const displayDate = new Date(transaction.date + 'T00:00:00').toLocaleDateString('pt-BR');
+
+                transactionItem.innerHTML = `
+                    <span class="date">${displayDate}</span>
+                    <span class="description">${transaction.description || 'Sem descrição'}</span>
+                    <span class="value">${transaction.type === 'expense' ? '-' : ''}${formatCurrency(transaction.value)}</span>
+                    <button class="delete-btn" data-index="${i}" title="Remover transação">
+                        <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm2 3a1 1 0 011-1h2a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"></path></svg>
+                    </button>
+                `;
+                transactionsListDiv.appendChild(transactionItem);
+            }
+
+            // Add event listeners for delete buttons (after rendering)
+            document.querySelectorAll('.delete-btn').forEach(button => {
+                button.addEventListener('click', (event) => {
+                    const indexToDelete = parseInt(event.currentTarget.dataset.index);
+                    deleteTransaction(indexToDelete);
+                });
+            });
+        }
+
+        /**
+         * Deletes a transaction from the list and updates the balance.
+         * @param {number} index The index of the transaction to delete.
+         */
+        function deleteTransaction(index) {
+            const transaction = transactions[index];
+            if (transaction.type === 'income') {
+                currentBalance -= transaction.value;
+            } else {
+                currentBalance += transaction.value;
+            }
+            transactions.splice(index, 1); // Remove from array
+            saveTransactions(); // Save after deletion
+            updateBalanceDisplay();
+            renderTransactions();
+        }
+
+
+        /**
+         * Handles adding a new transaction based on form inputs.
+         */
+        function addTransaction() {
+            const date = transactionDateInput.value;
+            const value = parseFloat(transactionValueInput.value);
+            const description = transactionDescriptionInput.value.trim();
+            const type = typeIncomeRadio.checked ? 'income' : 'expense';
+
+            if (!date || isNaN(value) || value <= 0) {
+                // Using a custom message box instead of alert()
+                showMessageBox('Erro: Por favor, preencha a data e um valor válido e positivo.', 'error');
+                return;
+            }
+
+            const newTransaction = {
+                date,
+                value,
+                description,
+                type
+            };
+
+            transactions.push(newTransaction);
+
+            if (type === 'income') {
+                currentBalance += value;
+            } else {
+                currentBalance -= value;
+            }
+
+            saveTransactions(); // Save after addition
+            updateBalanceDisplay();
+            renderTransactions();
+
+            // Clear form fields
+            transactionValueInput.value = '';
+            transactionDescriptionInput.value = '';
+            typeIncomeRadio.checked = true; // Reset to income
+        }
+
+        /**
+         * Handles the "Registrar Água" button click.
+         */
+        function addWaterExpense() {
+            const date = transactionDateInput.value; // Use current selected date
+            const value = 8.00;
+            const description = 'Despesa de Água';
+            const type = 'expense';
+
+            const newTransaction = {
+                date,
+                value,
+                description,
+                type
+            };
+
+            transactions.push(newTransaction);
+            currentBalance -= value;
+
+            saveTransactions(); // Save after addition
+            updateBalanceDisplay();
+            renderTransactions();
+            showMessageBox('Despesa de água (R$8,00) registrada com sucesso!', 'success');
+        }
+
+        /**
+         * Displays a custom message box.
+         * @param {string} message The message to display.
+         * @param {'success'|'error'} type The type of message (influences styling).
+         */
+        function showMessageBox(message, type) {
+            let messageBox = document.getElementById('customMessageBox');
+            if (!messageBox) {
+                messageBox = document.createElement('div');
+                messageBox.id = 'customMessageBox';
+                messageBox.className = 'fixed top-5 left-1/2 -translate-x-1/2 p-4 rounded-lg shadow-lg text-white z-50 transition-all duration-300 ease-in-out transform';
+                document.body.appendChild(messageBox);
+            }
+
+            messageBox.textContent = message;
+            messageBox.classList.remove('bg-green-500', 'bg-red-500', 'opacity-0', 'translate-y-full');
+
+            if (type === 'success') {
+                messageBox.classList.add('bg-green-500');
+            } else if (type === 'error') {
+                messageBox.classList.add('bg-red-500');
+            }
+
+            // Show the message box
+            messageBox.classList.add('opacity-100', 'translate-y-0');
+
+            // Hide after 3 seconds
+            setTimeout(() => {
+                messageBox.classList.remove('opacity-100', 'translate-y-0');
+                messageBox.classList.add('opacity-0', '-translate-y-full'); // Move off-screen to hide
+            }, 3000);
+        }
+
+        // Event Listeners
+        addTransactionBtn.addEventListener('click', addTransaction);
+        addWaterBtn.addEventListener('click', addWaterExpense);
+
+        // Initial load on page load
+        document.addEventListener('DOMContentLoaded', () => {
+            loadTransactions(); // Load data from localStorage on start
+        });
+    </script>
+</body>
+</html>

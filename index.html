@@ -224,11 +224,46 @@
                 text-align: left;
             }
         }
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 255, 255, 0.8);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 1.2rem;
+            color: #4a5568;
+            z-index: 10;
+            border-radius: 16px;
+        }
+        .loading-spinner {
+            border: 4px solid #f3f3f3; /* Light grey */
+            border-top: 4px solid #3498db; /* Blue */
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 2s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body class="antialiased">
-    <div class="container">
+    <div class="container relative">
+        <div id="loadingOverlay" class="loading-overlay hidden">
+            <div class="flex flex-col items-center gap-4">
+                <div class="loading-spinner"></div>
+                <span>Carregando dados...</span>
+            </div>
+        </div>
+
         <h1 class="text-4xl font-extrabold text-center text-blue-800 mb-6">Tesouro do Pet Elétrica</h1>
+        <p class="text-sm text-gray-500 text-center mb-4" id="userIdDisplay">Carregando usuário...</p>
 
         <div class="summary-section">
             <h2 class="text-xl font-bold text-gray-700 mb-4">Montante Atual:</h2>
@@ -287,7 +322,23 @@
         </div>
     </div>
 
-    <script>
+    <script type="module">
+        // Import Firebase SDKs
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, deleteDoc, query } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        let app;
+        let db;
+        let auth;
+        let userId = null; // Will store the authenticated user ID
+        let unsubscribeSnapshot = null; // To store the unsubscribe function for the real-time listener
+
         let transactions = [];
         let currentBalance = 0;
 
@@ -300,6 +351,8 @@
         const addWaterBtn = document.getElementById('addWaterBtn');
         const currentBalanceDisplay = document.getElementById('currentBalance');
         const transactionsListDiv = document.getElementById('transactionsList');
+        const userIdDisplay = document.getElementById('userIdDisplay');
+        const loadingOverlay = document.getElementById('loadingOverlay');
 
         // Set today's date as default
         const today = new Date();
@@ -309,30 +362,114 @@
         transactionDateInput.value = `${year}-${month}-${day}`;
 
         /**
-         * Saves the current transactions array to localStorage.
+         * Initializes Firebase app, authentication, and sets up the auth state listener.
          */
-        function saveTransactions() {
-            localStorage.setItem('petEletricaTreasury', JSON.stringify(transactions));
+        async function initializeFirebaseAndAuth() {
+            if (!firebaseConfig) {
+                console.error("Firebase config is missing. Cannot initialize Firebase.");
+                showMessageBox('Erro: Configuração do Firebase ausente.', 'error');
+                return;
+            }
+
+            try {
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Listen for authentication state changes
+                onAuthStateChanged(auth, async (user) => {
+                    if (user) {
+                        userId = user.uid;
+                        userIdDisplay.textContent = `ID do Usuário: ${userId}`;
+                        console.log("Autenticado com userId:", userId);
+                        setupRealtimeListener(); // Start listening for data after successful authentication
+                    } else {
+                        userId = null;
+                        userIdDisplay.textContent = 'Não autenticado.';
+                        console.log("Nenhum usuário logado. Tentando login anônimo...");
+                        try {
+                            if (initialAuthToken) {
+                                await signInWithCustomToken(auth, initialAuthToken);
+                            } else {
+                                await signInAnonymously(auth);
+                            }
+                        } catch (anonError) {
+                            console.error("Erro ao tentar login anônimo:", anonError);
+                            showMessageBox(`Erro de login: ${anonError.message}. Recarregue a página.`, 'error');
+                            // Clear transactions if no valid user/auth
+                            transactions = [];
+                            currentBalance = 0;
+                            updateBalanceDisplay();
+                            renderTransactions();
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error("Erro na inicialização do Firebase:", error);
+                showMessageBox(`Erro ao inicializar Firebase: ${error.message}`, 'error');
+            }
         }
 
         /**
-         * Loads transactions from localStorage and calculates current balance.
+         * Sets up a real-time listener for transactions from Firestore.
+         * Only runs if userId is available.
          */
-        function loadTransactions() {
-            const storedTransactions = localStorage.getItem('petEletricaTreasury');
-            if (storedTransactions) {
-                transactions = JSON.parse(storedTransactions);
-                currentBalance = 0; // Reset balance before recalculating
-                transactions.forEach(transaction => {
+        function setupRealtimeListener() {
+            if (!userId || !db) {
+                console.log("userId ou db não disponível para configurar o listener.");
+                return;
+            }
+
+            // Unsubscribe from previous listener if exists
+            if (unsubscribeSnapshot) {
+                unsubscribeSnapshot();
+            }
+
+            const transactionsCollectionRef = collection(db, `artifacts/${appId}/users/${userId}/transactions`);
+            const q = query(transactionsCollectionRef); // No orderBy to avoid index issues. Client-side sort is fine for small lists.
+
+            loadingOverlay.classList.remove('hidden'); // Show loading indicator
+
+            unsubscribeSnapshot = onSnapshot(q, (snapshot) => {
+                const fetchedTransactions = [];
+                currentBalance = 0; // Reset balance
+
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const transaction = {
+                        id: doc.id, // Store document ID for deletion
+                        date: data.date,
+                        value: parseFloat(data.value), // Ensure value is a number
+                        description: data.description,
+                        type: data.type
+                    };
+                    fetchedTransactions.push(transaction);
+
                     if (transaction.type === 'income') {
                         currentBalance += transaction.value;
                     } else {
                         currentBalance -= transaction.value;
                     }
                 });
-            }
-            updateBalanceDisplay();
-            renderTransactions();
+                
+                // Sort transactions by date (descending) and then type (income before expense for same date)
+                transactions = fetchedTransactions.sort((a, b) => {
+                    if (a.date > b.date) return -1;
+                    if (a.date < b.date) return 1;
+                    // If dates are the same, put income before expense
+                    if (a.type === 'income' && b.type === 'expense') return -1;
+                    if (a.type === 'expense' && b.type === 'income') return 1;
+                    return 0;
+                });
+
+                updateBalanceDisplay();
+                renderTransactions();
+                loadingOverlay.classList.add('hidden'); // Hide loading indicator
+            }, (error) => {
+                console.error("Erro ao carregar transações em tempo real:", error);
+                showMessageBox(`Erro ao carregar dados: ${error.message}`, 'error');
+                loadingOverlay.classList.add('hidden'); // Hide loading indicator even on error
+            });
         }
 
         /**
@@ -367,9 +504,7 @@
                 return;
             }
 
-            // Render in reverse order to show most recent at the top
-            for (let i = transactions.length - 1; i >= 0; i--) {
-                const transaction = transactions[i];
+            transactions.forEach(transaction => {
                 const transactionItem = document.createElement('div');
                 transactionItem.classList.add('transaction-item', transaction.type === 'income' ? 'income' : 'expense');
                 
@@ -380,51 +515,56 @@
                     <span class="date">${displayDate}</span>
                     <span class="description">${transaction.description || 'Sem descrição'}</span>
                     <span class="value">${transaction.type === 'expense' ? '-' : ''}${formatCurrency(transaction.value)}</span>
-                    <button class="delete-btn" data-index="${i}" title="Remover transação">
+                    <button class="delete-btn" data-id="${transaction.id}" title="Remover transação">
                         <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 011-1h4a1 1 0 110 2H8a1 1 0 01-1-1zm2 3a1 1 0 011-1h2a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"></path></svg>
                     </button>
                 `;
                 transactionsListDiv.appendChild(transactionItem);
-            }
+            });
 
-            // Add event listeners for delete buttons (after rendering)
+            // Add event listeners for delete buttons
             document.querySelectorAll('.delete-btn').forEach(button => {
                 button.addEventListener('click', (event) => {
-                    const indexToDelete = parseInt(event.currentTarget.dataset.index);
-                    deleteTransaction(indexToDelete);
+                    const transactionIdToDelete = event.currentTarget.dataset.id;
+                    deleteTransactionFromFirestore(transactionIdToDelete);
                 });
             });
         }
 
         /**
-         * Deletes a transaction from the list and updates the balance.
-         * @param {number} index The index of the transaction to delete.
+         * Deletes a transaction from Firestore.
+         * @param {string} transactionId The ID of the transaction document to delete.
          */
-        function deleteTransaction(index) {
-            const transaction = transactions[index];
-            if (transaction.type === 'income') {
-                currentBalance -= transaction.value;
-            } else {
-                currentBalance += transaction.value;
+        async function deleteTransactionFromFirestore(transactionId) {
+            if (!userId || !db) {
+                showMessageBox('Erro: Usuário não autenticado ou Firebase não inicializado.', 'error');
+                return;
             }
-            transactions.splice(index, 1); // Remove from array
-            saveTransactions(); // Save after deletion
-            updateBalanceDisplay();
-            renderTransactions();
+            try {
+                await deleteDoc(doc(db, `artifacts/${appId}/users/${userId}/transactions`, transactionId));
+                showMessageBox('Transação removida com sucesso!', 'success');
+            } catch (error) {
+                console.error("Erro ao remover transação:", error);
+                showMessageBox(`Erro ao remover transação: ${error.message}`, 'error');
+            }
         }
 
 
         /**
-         * Handles adding a new transaction based on form inputs.
+         * Handles adding a new transaction to Firestore based on form inputs.
          */
-        function addTransaction() {
+        async function addTransactionToFirestore() {
+            if (!userId || !db) {
+                showMessageBox('Erro: Usuário não autenticado ou Firebase não inicializado. Tente recarregar a página.', 'error');
+                return;
+            }
+
             const date = transactionDateInput.value;
             const value = parseFloat(transactionValueInput.value);
             const description = transactionDescriptionInput.value.trim();
             const type = typeIncomeRadio.checked ? 'income' : 'expense';
 
             if (!date || isNaN(value) || value <= 0) {
-                // Using a custom message box instead of alert()
                 showMessageBox('Erro: Por favor, preencha a data e um valor válido e positivo.', 'error');
                 return;
             }
@@ -433,31 +573,34 @@
                 date,
                 value,
                 description,
-                type
+                type,
+                timestamp: new Date().toISOString() // Add a timestamp for consistent ordering
             };
 
-            transactions.push(newTransaction);
+            try {
+                // Add the transaction to Firestore
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/transactions`), newTransaction);
+                showMessageBox('Transação adicionada com sucesso!', 'success');
 
-            if (type === 'income') {
-                currentBalance += value;
-            } else {
-                currentBalance -= value;
+                // Clear form fields after successful addition
+                transactionValueInput.value = '';
+                transactionDescriptionInput.value = '';
+                typeIncomeRadio.checked = true; // Reset to income
+            } catch (error) {
+                console.error("Erro ao adicionar transação:", error);
+                showMessageBox(`Erro ao adicionar transação: ${error.message}`, 'error');
             }
-
-            saveTransactions(); // Save after addition
-            updateBalanceDisplay();
-            renderTransactions();
-
-            // Clear form fields
-            transactionValueInput.value = '';
-            transactionDescriptionInput.value = '';
-            typeIncomeRadio.checked = true; // Reset to income
         }
 
         /**
-         * Handles the "Registrar Água" button click.
+         * Handles the "Registrar Água" button click, adding an expense to Firestore.
          */
-        function addWaterExpense() {
+        async function addWaterExpenseToFirestore() {
+            if (!userId || !db) {
+                showMessageBox('Erro: Usuário não autenticado ou Firebase não inicializado. Tente recarregar a página.', 'error');
+                return;
+            }
+
             const date = transactionDateInput.value; // Use current selected date
             const value = 8.00;
             const description = 'Despesa de Água';
@@ -467,16 +610,17 @@
                 date,
                 value,
                 description,
-                type
+                type,
+                timestamp: new Date().toISOString()
             };
 
-            transactions.push(newTransaction);
-            currentBalance -= value;
-
-            saveTransactions(); // Save after addition
-            updateBalanceDisplay();
-            renderTransactions();
-            showMessageBox('Despesa de água (R$8,00) registrada com sucesso!', 'success');
+            try {
+                await addDoc(collection(db, `artifacts/${appId}/users/${userId}/transactions`), newTransaction);
+                showMessageBox('Despesa de água (R$8,00) registrada com sucesso!', 'success');
+            } catch (error) {
+                console.error("Erro ao registrar despesa de água:", error);
+                showMessageBox(`Erro ao registrar água: ${error.message}`, 'error');
+            }
         }
 
         /**
@@ -513,12 +657,12 @@
         }
 
         // Event Listeners
-        addTransactionBtn.addEventListener('click', addTransaction);
-        addWaterBtn.addEventListener('click', addWaterExpense);
+        addTransactionBtn.addEventListener('click', addTransactionToFirestore);
+        addWaterBtn.addEventListener('click', addWaterExpenseToFirestore);
 
         // Initial load on page load
         document.addEventListener('DOMContentLoaded', () => {
-            loadTransactions(); // Load data from localStorage on start
+            initializeFirebaseAndAuth(); // Initialize Firebase and authentication
         });
     </script>
 </body>
